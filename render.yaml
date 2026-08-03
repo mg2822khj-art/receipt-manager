@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: receipt-manager
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: PYTHONUTF8
+        value: "1"

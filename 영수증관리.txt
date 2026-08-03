@@ -1,0 +1,38 @@
+너는 최고 수준의 Python 웹 개발자이자 AI 활용 전문가야. 
+'댕스케어(Thankscare)' 법인카드 영수증 지출 관리 및 보고용 사내 웹앱을 Streamlit과 Gemini API를 이용해 바이브코딩 방식으로 처음부터 끝까지 구축해 줘.
+
+[기술 스택 및 환경]
+- Frontend & Backend: Python, Streamlit
+- AI API: google-genai SDK (Gemini API Tier 1 계정 사용, 모델은 'gemini-2.5-flash' 적용)
+- Data Storage: Pandas 기반 로컬 CSV 파일 (receipts.csv)
+
+[핵심 요구사항]
+1. 사이드바 메뉴 구성
+   - '영수증 등록', '지출 대시보드' 2개의 메뉴로 구성.
+   
+2. 영수증 등록 페이지 (기능)
+   - 업로더: 윤수빈 사원님 및 관리자(원장님)를 선택할 수 있는 '작성자' 드롭다운 메뉴.
+   - 영수증 이미지(jpg, png) 업로드 위젯.
+   - 이미지가 업로드되면 Gemini API의 Vision 기능을 호출하여 다음 정보를 순수 JSON 형태로 자동 추출:
+     {
+       "date": "YYYY-MM-DD",
+       "merchant": "결제처 이름",
+       "amount": 총 금액(숫자),
+       "category": "소모품비/식비/차량유지비/기타 중 택1",
+       "memo": "구매 물품 요약"
+     }
+   - 추출된 데이터를 Streamlit의 `st.text_input` 및 `st.number_input` 폼에 미리 채워넣어 사용자가 확인하고 수정할 수 있게 할 것.
+   - '제출하기' 버튼을 누르면 receipts.csv 파일에 누적 저장.
+
+3. 지출 대시보드 페이지 (기능)
+   - receipts.csv에 저장된 데이터를 `st.dataframe`으로 출력.
+   - 상단에 이번 달 총 지출 금액(Metric) 표시.
+   - 작성자별, 카테고리별 지출 요약 그래프 추가.
+   - CSV 파일 다운로드 버튼 제공.
+
+[출력 요청 사항]
+1. requirements.txt 파일
+2. app.py 전체 코드
+3. .env 설정 방법 안내
+4. 영수증 인식률을 높이기 위한 완벽한 Gemini System Prompt가 코드 내에 포함되어야 함. 
+마크다운 설명은 최소화하고, 즉시 실행 가능한 완성된 코드 위주로 작성해 줘.

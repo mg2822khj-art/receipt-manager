@@ -1,0 +1,5 @@
+.env
+receipts.csv
+__pycache__/
+*.pyc
+.streamlit/credentials.toml
