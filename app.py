@@ -2,7 +2,6 @@ import os
 import sys
 import json
 import re
-import io
 from datetime import datetime, time as dtime
 
 # Windows 한글 인코딩 강제 설정
@@ -16,7 +15,6 @@ if hasattr(sys.stdout, "reconfigure"):
 
 import streamlit as st
 import pandas as pd
-from PIL import Image
 from dotenv import load_dotenv
 import plotly.express as px
 from google import genai
