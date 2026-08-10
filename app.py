@@ -104,108 +104,174 @@ def extract_receipt_info(image_bytes: bytes, mime_type: str) -> dict:
     return json.loads(raw)
 
 
+# ── 엑셀 일괄 등록 ────────────────────────────────────────────────────────────
+def import_excel(file, author: str) -> int:
+    EXCEL_COL_MAP = {
+        "사용일자": "date",
+        "사용시간": "time",
+        "결제지역(시)": "location",
+        "가맹점명": "merchant",
+        "결제금액(원)": "amount",
+        "계정과목(분류)": "category",
+        "목적/상세사유": "purpose",
+        "참석자/대상처": "attendees",
+    }
+    xl = pd.read_excel(file)
+    xl = xl.rename(columns=EXCEL_COL_MAP)
+
+    df = load_csv()
+    next_id = int(df["id"].max() + 1) if not df.empty and pd.notna(df["id"].max()) else 1
+
+    rows = []
+    for _, row in xl.iterrows():
+        try:
+            date_str = pd.to_datetime(str(row.get("date", ""))).strftime("%Y-%m-%d")
+        except Exception:
+            date_str = datetime.today().strftime("%Y-%m-%d")
+
+        new_row = {
+            "id": next_id,
+            "author": author,
+            "date": date_str,
+            "time": str(row.get("time", ""))[:5] if pd.notna(row.get("time", "")) else "",
+            "merchant": str(row.get("merchant", "")),
+            "location": str(row.get("location", "")),
+            "amount": int(row.get("amount", 0)),
+            "category": str(row.get("category", "기타")),
+            "purpose": str(row.get("purpose", "")),
+            "attendees": str(row.get("attendees", "")),
+            "registered_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        rows.append(new_row)
+        next_id += 1
+
+    new_df = pd.DataFrame(rows)
+    result = pd.concat([df, new_df], ignore_index=True) if not df.empty else new_df
+    result.to_csv(CSV_PATH, index=False, encoding="utf-8-sig")
+    return len(rows)
+
+
 # ── 페이지: 영수증 등록 ──────────────────────────────────────────────────────
 def page_register():
     st.title("📄 영수증 등록")
 
-    author = st.selectbox("작성자", AUTHORS, key="author_select")
-    uploaded = st.file_uploader("영수증 이미지 업로드", type=["jpg", "jpeg", "png"])
+    tab1, tab2 = st.tabs(["📷 개별 등록 (이미지)", "📊 엑셀 일괄 등록"])
 
-    extracted: dict = {}
+    with tab2:
+        st.subheader("📊 엑셀 파일 일괄 등록")
+        st.caption("아래 컬럼이 포함된 엑셀 파일을 업로드하세요: 사용일자, 사용시간, 결제지역(시), 가맹점명, 결제금액(원), 계정과목(분류), 목적/상세사유, 참석자/대상처")
 
-    if uploaded:
-        image_bytes = uploaded.read()
-        mime_type = "image/jpeg" if uploaded.type in ("image/jpg", "image/jpeg") else "image/png"
+        excel_author = st.selectbox("작성자", AUTHORS, key="excel_author")
+        excel_file = st.file_uploader("엑셀 파일 업로드", type=["xlsx", "xls"], key="excel_uploader")
 
-        col_img, col_info = st.columns([1, 1])
-        with col_img:
-            st.image(image_bytes, caption="업로드된 영수증", use_container_width=True)
+        if excel_file:
+            try:
+                preview = pd.read_excel(excel_file)
+                st.dataframe(preview, use_container_width=True, hide_index=True)
+                excel_file.seek(0)
 
-        with col_info:
-            with st.spinner("🤖 Gemini AI가 영수증을 분석 중입니다..."):
+                if st.button("✅ 일괄 등록하기", type="primary", use_container_width=True):
+                    excel_file.seek(0)
+                    count = import_excel(excel_file, excel_author)
+                    st.success(f"🎉 총 **{count}건** 등록 완료!")
+                    st.balloons()
+            except Exception as e:
+                st.error(f"엑셀 읽기 실패: {e}")
+
+    with tab1:
+        author = st.selectbox("작성자", AUTHORS, key="author_select")
+        uploaded = st.file_uploader("영수증 이미지 업로드", type=["jpg", "jpeg", "png"])
+
+        extracted: dict = {}
+
+        if uploaded:
+            image_bytes = uploaded.read()
+            mime_type = "image/jpeg" if uploaded.type in ("image/jpg", "image/jpeg") else "image/png"
+
+            col_img, col_info = st.columns([1, 1])
+            with col_img:
+                st.image(image_bytes, caption="업로드된 영수증", use_container_width=True)
+
+            with col_info:
+                with st.spinner("🤖 Gemini AI가 영수증을 분석 중입니다..."):
+                    try:
+                        extracted = extract_receipt_info(image_bytes, mime_type)
+                        st.success("✅ 자동 추출 완료! 아래 내용을 확인·수정 후 제출하세요.")
+                    except Exception as e:
+                        st.error(f"AI 분석 실패: {e}")
+
+        st.divider()
+        st.subheader("📝 지출 정보 확인 및 수정")
+
+        with st.form("receipt_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                date_val = extracted.get("date", datetime.today().strftime("%Y-%m-%d"))
                 try:
-                    extracted = extract_receipt_info(image_bytes, mime_type)
-                    st.success("✅ 자동 추출 완료! 아래 내용을 확인·수정 후 제출하세요.")
-                except Exception as e:
-                    st.error(f"AI 분석 실패: {e}")
+                    date_obj = datetime.strptime(date_val, "%Y-%m-%d").date()
+                except Exception:
+                    date_obj = datetime.today().date()
+                date_input = st.date_input("사용일자", value=date_obj)
 
-    st.divider()
-    st.subheader("📝 지출 정보 확인 및 수정")
+            with col2:
+                time_val = extracted.get("time", "")
+                try:
+                    time_obj = datetime.strptime(time_val, "%H:%M").time()
+                except Exception:
+                    time_obj = dtime(0, 0)
+                time_input = st.time_input("사용시간", value=time_obj)
 
-    with st.form("receipt_form"):
-        # 날짜 + 시간
-        col1, col2 = st.columns(2)
-        with col1:
-            date_val = extracted.get("date", datetime.today().strftime("%Y-%m-%d"))
-            try:
-                date_obj = datetime.strptime(date_val, "%Y-%m-%d").date()
-            except Exception:
-                date_obj = datetime.today().date()
-            date_input = st.date_input("사용일자", value=date_obj)
+            col3, col4 = st.columns(2)
+            with col3:
+                merchant_input = st.text_input("가맹점명", value=extracted.get("merchant", ""))
+            with col4:
+                location_input = st.text_input("결제지역(시/구)", value=extracted.get("location", ""))
 
-        with col2:
-            time_val = extracted.get("time", "")
-            try:
-                time_obj = datetime.strptime(time_val, "%H:%M").time()
-            except Exception:
-                time_obj = dtime(0, 0)
-            time_input = st.time_input("사용시간", value=time_obj)
+            col5, col6 = st.columns(2)
+            with col5:
+                amount_input = st.number_input(
+                    "결제금액(원)", min_value=0, step=100,
+                    value=int(extracted.get("amount", 0))
+                )
+            with col6:
+                default_cat = extracted.get("category", CATEGORIES[0])
+                cat_idx = CATEGORIES.index(default_cat) if default_cat in CATEGORIES else 0
+                category_input = st.selectbox("계정과목(분류)", CATEGORIES, index=cat_idx)
 
-        # 가맹점 + 지역
-        col3, col4 = st.columns(2)
-        with col3:
-            merchant_input = st.text_input("가맹점명", value=extracted.get("merchant", ""))
-        with col4:
-            location_input = st.text_input("결제지역(시/구)", value=extracted.get("location", ""))
-
-        # 금액 + 카테고리
-        col5, col6 = st.columns(2)
-        with col5:
-            amount_input = st.number_input(
-                "결제금액(원)", min_value=0, step=100,
-                value=int(extracted.get("amount", 0))
+            purpose_input = st.text_input(
+                "목적/상세사유",
+                value=extracted.get("purpose", ""),
+                placeholder="예: 외부 미팅 후 식사, 거래처 직원 간식 제공"
             )
-        with col6:
-            default_cat = extracted.get("category", CATEGORIES[0])
-            cat_idx = CATEGORIES.index(default_cat) if default_cat in CATEGORIES else 0
-            category_input = st.selectbox("계정과목(분류)", CATEGORIES, index=cat_idx)
 
-        # 목적/사유
-        purpose_input = st.text_input(
-            "목적/상세사유",
-            value=extracted.get("purpose", ""),
-            placeholder="예: 외부 미팅 후 식사, 거래처 직원 간식 제공"
-        )
+            attendees_input = st.text_input(
+                "참석자/대상처",
+                value=extracted.get("attendees", ""),
+                placeholder="예: 대표님, 권혁제 / 이지의원"
+            )
 
-        # 참석자/대상처
-        attendees_input = st.text_input(
-            "참석자/대상처",
-            value=extracted.get("attendees", ""),
-            placeholder="예: 대표님, 권혁제 / 이지의원"
-        )
+            submitted = st.form_submit_button("✅ 제출하기", use_container_width=True)
 
-        submitted = st.form_submit_button("✅ 제출하기", use_container_width=True)
-
-    if submitted:
-        if not merchant_input:
-            st.warning("가맹점명을 입력해주세요.")
-        elif amount_input <= 0:
-            st.warning("결제금액을 입력해주세요.")
-        else:
-            row = {
-                "author": author,
-                "date": date_input.strftime("%Y-%m-%d"),
-                "time": time_input.strftime("%H:%M"),
-                "merchant": merchant_input,
-                "location": location_input,
-                "amount": amount_input,
-                "category": category_input,
-                "purpose": purpose_input,
-                "attendees": attendees_input,
-            }
-            save_to_csv(row)
-            st.success(f"🎉 **{merchant_input}** 영수증이 저장되었습니다!")
-            st.balloons()
+        if submitted:
+            if not merchant_input:
+                st.warning("가맹점명을 입력해주세요.")
+            elif amount_input <= 0:
+                st.warning("결제금액을 입력해주세요.")
+            else:
+                row = {
+                    "author": author,
+                    "date": date_input.strftime("%Y-%m-%d"),
+                    "time": time_input.strftime("%H:%M"),
+                    "merchant": merchant_input,
+                    "location": location_input,
+                    "amount": amount_input,
+                    "category": category_input,
+                    "purpose": purpose_input,
+                    "attendees": attendees_input,
+                }
+                save_to_csv(row)
+                st.success(f"🎉 **{merchant_input}** 영수증이 저장되었습니다!")
+                st.balloons()
 
 
 # ── 페이지: 지출 대시보드 ────────────────────────────────────────────────────
